@@ -1,0 +1,41 @@
+diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
+index 06956ce..cfae7b4 100644
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -1,4 +1,8 @@
+ #include "ggml-cuda.h"
++
++#ifndef XCAVATE_FIXED_NSM
++#define XCAVATE_FIXED_NSM 64
++#endif
+ #include "ggml-impl.h"
+ #include "ggml-backend-impl.h"
+ 
+@@ -336,6 +340,14 @@ static ggml_cuda_device_info ggml_cuda_init() {
+         total_vram += device_vram;
+         info.devices[id].integrated = false; // Temporarily disabled due to issues with corrupted output (e.g. #15034)
+         info.devices[id].nsm        = prop.multiProcessorCount;
++        // Xcavate (Phase 6, E13; D-024): plan work as if every GPU had XCAVATE_FIXED_NSM
++        // processors, so kernels that split work by processor count give the same bits on every
++        // GPU size. A protocol constant of the pinned release; GGML_CUDA_VIRTUAL_NSM overrides it
++        // (experiments only: a node with another value fails exact replay against the network).
++        info.devices[id].nsm = XCAVATE_FIXED_NSM;
++        if (const char * vnsm = getenv("GGML_CUDA_VIRTUAL_NSM")) {
++            info.devices[id].nsm = atoi(vnsm);
++        }
+         info.devices[id].smpb       = prop.sharedMemPerBlock;
+         info.devices[id].warp_size  = prop.warpSize;
+ 
+@@ -436,6 +448,12 @@ const ggml_cuda_device_info & ggml_cuda_info() {
+     return info;
+ }
+ 
++// Xcavate: the processor count kernels plan for on `device` (the engine reports it in its
++// numerics id, so only nodes that compute identically verify each other).
++extern "C" GGML_BACKEND_API int xcavate_planning_nsm(int device) {
++    return ggml_cuda_info().devices[device].nsm;
++}
++
+ // #define DEBUG_CUDA_MALLOC
+ 
+ // buffer pool for cuda (legacy)
